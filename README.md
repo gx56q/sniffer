@@ -68,6 +68,12 @@ To filter by tcp protocol:
 python3 main.py --protocol tcp
 ```
 
+#### Testing the program
+To test the program, you can use the following command:
+
+```sh
+python3 main.py --test
+```
 
 ### Help
 

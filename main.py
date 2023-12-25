@@ -10,7 +10,7 @@ from filters import *
 logging.basicConfig(format='%(asctime)s - %(levelname)s: %(message)s', level=logging.INFO)
 
 
-def main(output_file, dest_port, dest_ip, protocol):
+def main(output_file, dest_port, dest_ip, protocol, is_test):
     dest_ip_to_filter = socket.inet_aton(dest_ip) if dest_ip != "*" else "*"
     dest_port_to_filter = int(dest_port) if dest_port != "*" else "*"
     protocol_to_filter = int(protocol) if protocol != "*" else "*"
@@ -25,7 +25,8 @@ def main(output_file, dest_port, dest_ip, protocol):
     parser = PacketParser(output_file)
     try:
         while True:
-            send_test_packet()
+            if is_test:
+                send_test_packet()
             packet = s.recvfrom(2048)
             if filter_packet(packet[0], filters_to_apply):
                 parser.parse_packet(packet[0])
@@ -61,6 +62,7 @@ if __name__ == "__main__":
                            help="Destination IP address to filter, example: 192.168.1.1 (default: *), use * to disable filtering")
     argparser.add_argument("--protocol", default="*",
                            help="Protocol to filter, example: TCP (default: *), use * to disable filtering")
+    argparser.add_argument("--test", action="store_true", help="Enable verbose mode")
 
     args = argparser.parse_args()
     if args.dest_ip != "*" and not is_valid_ip(args.dest_ip):
@@ -80,4 +82,4 @@ if __name__ == "__main__":
         elif args.protocol.lower() == "udp":
             args.protocol = 17
 
-    main(args.output_file, args.dest_port, args.dest_ip, args.protocol)
+    main(args.output_file, args.dest_port, args.dest_ip, args.protocol, args.test)
