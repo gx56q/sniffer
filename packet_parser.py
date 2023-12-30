@@ -6,9 +6,10 @@ import time
 
 
 class PacketParser:
-    def __init__(self, output_file):
+    def __init__(self, output_file, validate_checksum=False):
         self.pcap_global_header_written = False
         self.output_file = output_file
+        self.validate_checksum = validate_checksum
         self.pcap_file = open(output_file, 'wb')
 
         logging.basicConfig(filename="packet_log.txt", level=logging.INFO,
@@ -35,10 +36,11 @@ class PacketParser:
         header_length = (ip_header[0] & 0xF) * 4
         ttl = ip_header[5]
         protocol = ip_header[6]
+        checksum = ip_header[7]
         src_ip = ip_header[8]
         dest_ip = ip_header[9]
 
-        return version, header_length, ttl, protocol, src_ip, dest_ip
+        return version, header_length, ttl, protocol, checksum, src_ip, dest_ip
 
     @staticmethod
     def parse_tcp_header(payload, header_length):
@@ -58,6 +60,52 @@ class PacketParser:
 
         return src_port, dest_port, length, checksum, udp_payload
 
+    def validate_tcp_checksum(self, tcp_header_info, src_ip, dest_ip, payload, header_length):
+        pseudo_header = struct.pack('!IIIBBH',
+                                    src_ip,
+                                    dest_ip,
+                                    0,
+                                    6,
+                                    len(payload) - header_length,
+                                    0)
+        pseudo_packet = pseudo_header + payload[header_length:]
+        calculated_checksum = self.calculate_checksum(pseudo_packet)
+        received_checksum = tcp_header_info[6]
+        return calculated_checksum == received_checksum
+
+    def validate_udp_checksum(self, received_checksum, src_ip, dest_ip, payload, header_length):
+        pseudo_header = struct.pack('!IIIBBH',
+                                    src_ip,
+                                    dest_ip,
+                                    0,
+                                    17,
+                                    len(payload) - header_length,
+                                    0)
+        pseudo_packet = pseudo_header + payload[header_length:]
+        calculated_checksum = self.calculate_checksum(pseudo_packet)
+        return calculated_checksum == received_checksum
+
+    def validate_ip_checksum(self, received_checksum, src_ip, dest_ip, payload, header_length):
+        pseudo_header = struct.pack('!II',
+                                    src_ip,
+                                    dest_ip)
+        pseudo_packet = pseudo_header + payload[:header_length]
+        calculated_checksum = self.calculate_checksum(pseudo_packet)
+        return calculated_checksum == received_checksum
+
+    @staticmethod
+    def calculate_checksum(data):
+        checksum = 0
+        if len(data) % 2 != 0:
+            data += b'\x00'
+        for i in range(0, len(data), 2):
+            w = (data[i] << 8) + data[i + 1]
+            checksum += w
+        while checksum >> 16:
+            checksum = (checksum & 0xFFFF) + (checksum >> 16)
+        checksum = ~checksum & 0xFFFF
+        return checksum
+
     def parse_packet(self, packet):
         dest_mac, src_mac, ethertype, payload = self.parse_ethernet_frame(packet)
         result_str = f"Ethernet Frame\n" \
@@ -67,7 +115,7 @@ class PacketParser:
                      f"Payload: {binascii.hexlify(payload).decode('utf-8')}"
 
         if ethertype == 0x0800:  # IPv4
-            version, header_length, ttl, protocol, src_ip, dest_ip = self.parse_ip_header(payload)
+            version, header_length, ttl, protocol, checksum, src_ip, dest_ip = self.parse_ip_header(payload)
             result_str += f"\nIP Header\n" \
                           f"Version: {version}\n" \
                           f"Header Length: {header_length}\n" \
@@ -75,6 +123,10 @@ class PacketParser:
                           f"Protocol: {protocol}\n" \
                           f"Source IP: {socket.inet_ntoa(src_ip)}\n" \
                           f"Destination IP: {socket.inet_ntoa(dest_ip)}"
+            if self.validate_checksum:
+                is_valid = self.validate_ip_checksum(checksum, src_ip, dest_ip,
+                                                     payload, header_length)
+                result_str += f"\nIP Checksum Validation: {is_valid}"
 
             if protocol == 6:  # TCP
                 tcp_header_info = self.parse_tcp_header(payload, header_length)
@@ -90,6 +142,14 @@ class PacketParser:
                               f"Urgent Pointer: {tcp_header_info[7]}\n" \
                               f"TCP Payload: {binascii.hexlify(tcp_header_info[8]).decode('utf-8')}"
 
+                if self.validate_checksum:
+                    is_valid = self.validate_tcp_checksum(tcp_header_info,
+                                                          src_ip,
+                                                          dest_ip,
+                                                          payload,
+                                                          header_length)
+                    result_str += f"\nTCP Checksum Validation: {is_valid}"
+
             elif protocol == 17:  # UDP
                 udp_header_info = self.parse_udp_header(payload, header_length)
                 result_str += f"\nUDP Header\n" \
@@ -98,6 +158,14 @@ class PacketParser:
                               f"Length: {udp_header_info[2]}\n" \
                               f"Checksum: {udp_header_info[3]}\n" \
                               f"UDP Payload: {binascii.hexlify(udp_header_info[4]).decode('utf-8')}"
+
+                if self.validate_checksum:
+                    is_valid = self.validate_udp_checksum(udp_header_info[3],
+                                                          src_ip,
+                                                          dest_ip,
+                                                          payload,
+                                                          header_length)
+                    result_str += f"\nUDP Checksum Validation: {is_valid}"
 
         logging.info(result_str)
         return result_str

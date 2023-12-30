@@ -7,22 +7,28 @@ from scapy.layers.l2 import Ether
 from scapy.sendrecv import sendp
 from filters import *
 
-logging.basicConfig(format='%(asctime)s - %(levelname)s: %(message)s', level=logging.INFO)
+logging.basicConfig(format='%(asctime)s - %(levelname)s: %(message)s',
+                    level=logging.INFO)
 
 
-def main(output_file, dest_port, dest_ip, protocol, is_test):
+def main(output_file, dest_port, dest_ip, protocol, is_test,
+         validate_checksum=False):
     dest_ip_to_filter = socket.inet_aton(dest_ip) if dest_ip != "*" else "*"
     dest_port_to_filter = int(dest_port) if dest_port != "*" else "*"
     protocol_to_filter = int(protocol) if protocol != "*" else "*"
 
     filters_to_apply = [
-        lambda packet, ethertype: filter_dest_ip(packet, ethertype, dest_ip_to_filter),
-        lambda packet, ethertype: filter_dest_port(packet, ethertype, dest_port_to_filter),
-        lambda packet, ethertype: filter_protocol(packet, ethertype, protocol_to_filter)
+        lambda packet, ethertype: filter_dest_ip(packet, ethertype,
+                                                 dest_ip_to_filter),
+        lambda packet, ethertype: filter_dest_port(packet, ethertype,
+                                                   dest_port_to_filter),
+        lambda packet, ethertype: filter_protocol(packet, ethertype,
+                                                  protocol_to_filter)
     ]
     print(f"Start capturing. Press Ctrl+C to stop.")
     s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(0x0003))
-    parser = PacketParser(output_file)
+    parser = PacketParser(output_file=output_file,
+                          validate_checksum=validate_checksum)
     try:
         while True:
             if is_test:
@@ -40,7 +46,8 @@ def main(output_file, dest_port, dest_ip, protocol, is_test):
 
 
 def send_test_packet():
-    packet = (Ether(src="00:11:22:33:44:55", dst="66:77:88:99:aa:bb") / IP(src="192.168.1.1", dst="192.168.1.2") /
+    packet = (Ether(src="00:11:22:33:44:55", dst="66:77:88:99:aa:bb") / IP(
+        src="192.168.1.1", dst="192.168.1.2") /
               UDP(dport=1234))
     sendp(packet, iface="eth0", verbose=0)
 
@@ -54,15 +61,25 @@ def is_valid_ip(ip):
 
 
 if __name__ == "__main__":
-    argparser = argparse.ArgumentParser(description="Capture and filter network traffic.")
-    argparser.add_argument("--output_file", default="output.pcap", help="Output file name (default: output.pcap)")
+    argparser = argparse.ArgumentParser(description="Capture and filter "
+                                                    "network traffic.")
+    argparser.add_argument("--output_file", default="output.pcap",
+                           help="Output file name (default: output.pcap)")
     argparser.add_argument("--dest-port", default="*",
-                           help="Destination port to filter (default: *), use * to disable filtering")
+                           help="Destination port to filter (default: *), "
+                                "use * to disable filtering")
     argparser.add_argument("--dest-ip", default="*",
-                           help="Destination IP address to filter, example: 192.168.1.1 (default: *), use * to disable filtering")
+                           help="Destination IP address to filter, example: "
+                                "192.168.1.1 (default: *), use * to disable "
+                                "filtering")
     argparser.add_argument("--protocol", default="*",
-                           help="Protocol to filter, example: TCP (default: *), use * to disable filtering")
-    argparser.add_argument("--test", action="store_true", help="Enable verbose mode")
+                           help="Protocol to filter, example: TCP (default: "
+                                "*), use * to disable filtering")
+    argparser.add_argument("--validate-checksum", action="store_true",
+                           help="Enable checksum validation (default: "
+                                "disabled)")
+    argparser.add_argument("--test", action="store_true",
+                           help="Enable test mode")
 
     args = argparser.parse_args()
     if args.dest_ip != "*" and not is_valid_ip(args.dest_ip):
@@ -82,4 +99,6 @@ if __name__ == "__main__":
         elif args.protocol.lower() == "udp":
             args.protocol = 17
 
-    main(args.output_file, args.dest_port, args.dest_ip, args.protocol, args.test)
+    main(args.output_file, args.dest_port, args.dest_ip, args.protocol,
+         args.test,
+         args.validate_checksum)

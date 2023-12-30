@@ -68,6 +68,14 @@ To filter by tcp protocol:
 python3 main.py --protocol tcp
 ```
 
+#### Validating checksum of received packets
+To validate checksum of received packets:
+
+```sh
+python3 main.py --validate-checksum
+```
+
+
 #### Testing the program
 To test the program, you can use the following command:
 
